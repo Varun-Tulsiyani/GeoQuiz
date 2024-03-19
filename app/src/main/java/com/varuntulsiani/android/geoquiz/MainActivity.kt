@@ -1,10 +1,17 @@
 package com.varuntulsiani.android.geoquiz
 
+import android.app.Activity
+import android.content.Intent
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.widget.Button
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import com.varuntulsiani.android.geoquiz.databinding.ActivityMainBinding
 
@@ -12,16 +19,17 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
-    private val questionBank: List<Question> = listOf(
-        Question(R.string.question_australia, true),
-        Question(R.string.question_oceans, true),
-        Question(R.string.question_mideast, false),
-        Question(R.string.question_africa, false),
-        Question(R.string.question_americas, true),
-        Question(R.string.question_asia, true),
-    )
+    private val quizViewModel: QuizViewModel by viewModels()
 
-    private var currentIndex = 0
+    private val cheatLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            quizViewModel.isCheater =
+                result.data?.getBooleanExtra(EXTRA_ANSWER_SHOWN, false) ?: false
+        }
+    }
+
     private var score = 0
 
     private var TAG = "MainActivity"
@@ -33,23 +41,31 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.trueButton.setOnClickListener {view: View ->
+        Log.d(TAG, "Got a QuizViewModel: $quizViewModel")
+
+        binding.trueButton.setOnClickListener { view: View ->
             // Do something in response to the click here
             checkAnswer(true)
         }
 
-        binding.falseButton.setOnClickListener {view: View ->
+        binding.falseButton.setOnClickListener { view: View ->
             // Do something in response to the click here
             checkAnswer(false)
         }
 
         binding.nextButton.setOnClickListener {
-            currentIndex = (currentIndex + 1) % questionBank.size
+            quizViewModel.moveToNext()
             updateQuestion()
         }
 
+        binding.cheatButton.setOnClickListener {
+            val answerIsTrue: Boolean = quizViewModel.currentQuestionAnswer
+            val intent: Intent = CheatActivity.newIntent(this@MainActivity, answerIsTrue)
+            cheatLauncher.launch(intent)
+        }
+
         binding.prevButton.setOnClickListener {
-            currentIndex = (currentIndex - 1) % questionBank.size
+            quizViewModel.moveToPrev()
             updateQuestion()
         }
 
@@ -58,6 +74,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateQuestion()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            blurCheatButton()
+        }
 
         Toast.makeText(
             this,
@@ -92,18 +112,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateQuestion() {
-        val questionTextResId = questionBank[currentIndex].textResId
+        val questionTextResId = quizViewModel.currentQuestionText
         binding.questionTextView.setText(questionTextResId)
     }
 
     private fun checkAnswer(userAnswer: Boolean) {
-        val correctAnswer = questionBank[currentIndex].answer
+        val correctAnswer = quizViewModel.currentQuestionAnswer
 
-        val messageResId = if (userAnswer == correctAnswer) {
-            score += 1
-            R.string.correct_toast
-        } else {
-            R.string.incorrect_toast
+        val messageResId = when {
+            quizViewModel.isCheater -> R.string.judgement_toast
+            userAnswer == correctAnswer -> R.string.correct_toast
+            else -> R.string.incorrect_toast
         }
 
         Toast.makeText(
@@ -111,5 +130,15 @@ class MainActivity : AppCompatActivity() {
             messageResId,
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun blurCheatButton() {
+        val effect = RenderEffect.createBlurEffect(
+            10.0f,
+            10.0f,
+            Shader.TileMode.CLAMP
+        )
+        binding.cheatButton.setRenderEffect(effect)
     }
 }
